@@ -1,7 +1,7 @@
 use clap::Parser;
-use owo_colors::OwoColorize as _;
+use owo_colors::{AnsiColors, OwoColorize as _, Stream::Stdout};
 use std::{
-    io::{Read as _, StdoutLock, Write as _},
+    io::{BufReader, Read as _, StdoutLock, Write as _},
     path::PathBuf,
 };
 
@@ -17,15 +17,11 @@ fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
     let contents = match args.filename {
-        Some(filename) => std::fs::read(filename)?,
-        None => {
-            let mut buffer = Vec::new();
-
-            std::io::stdin().read_to_end(&mut buffer)?;
-
-            buffer
-        }
-    };
+        Some(filename) => BufReader::new(std::fs::File::open(filename)?)
+            .bytes()
+            .collect::<Result<Vec<_>, _>>(),
+        None => BufReader::new(std::io::stdin()).bytes().collect(),
+    }?;
 
     let chunks = contents.chunks(args.width);
 
@@ -47,11 +43,15 @@ fn write_chunk(
     write!(stdout, "{:08x} | ", offset * width)?;
 
     for b in chunk {
-        match b {
-            0..=31 => write!(stdout, "{:02x} ", b.blue())?,
-            32..=127 => write!(stdout, "{:02x} ", b.green())?,
-            128..=255 => write!(stdout, "{:02x} ", b.yellow())?,
-        };
+        write!(
+            stdout,
+            "{:02x} ",
+            b.if_supports_color(Stdout, |b| b.color(match b {
+                0..=31 => AnsiColors::Blue,
+                32..=127 => AnsiColors::Green,
+                128..=255 => AnsiColors::Yellow,
+            }))
+        )?;
     }
 
     for _ in chunk.len()..width {
@@ -61,11 +61,17 @@ fn write_chunk(
     write!(stdout, "| ")?;
 
     for b in chunk {
-        match b {
-            0..=31 => write!(stdout, "{}", ".".blue()),
-            32..=127 => write!(stdout, "{}", (*b as char).green()),
-            128..=255 => write!(stdout, "{}", ".".yellow()),
-        }?;
+        let (c, color) = match *b {
+            0..=31 => ('.', AnsiColors::Blue),
+            32..=127 => (*b as char, AnsiColors::Green),
+            128..=255 => ('.', AnsiColors::Yellow),
+        };
+
+        write!(
+            stdout,
+            "{}",
+            c.if_supports_color(Stdout, |c| c.color(color))
+        )?;
     }
 
     writeln!(stdout)
