@@ -6,3 +6,8 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.5.20", features = ["derive"] }
 owo-colors = { version = "4.1.0", features = ["supports-colors"] }
+
+[profile.release-fast]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
